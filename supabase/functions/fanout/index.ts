@@ -1,6 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import webpush from "npm:web-push@3.6.7";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -43,37 +42,8 @@ Deno.serve(async (req) => {
       rung2.map((c) => ({ request_id, user_id: c.user_id, rung: 2 })),
       { onConflict: "request_id,user_id", ignoreDuplicates: true },
     );
-    await pushAll(admin, rung2.map((c) => c.user_id), r, user.id);
+    // Web Push is sent by push-pending (shared with rung 3); the in-app banner does not depend on it.
+    await admin.functions.invoke("push-pending").catch((e: Error) => console.error("push poke failed:", e.message));
   }
   return json({ rung2: rung2.length, rung3_scheduled: true });
 });
-
-// Best-effort Web Push. The in-app banner (realtime on request_targets) is the guaranteed path.
-// Payload carries labels only, never coordinates.
-async function pushAll(admin: ReturnType<typeof createClient>, userIds: string[], r: Record<string, string>, requesterId: string) {
-  const pub = Deno.env.get("NEXT_PUBLIC_VAPID_PUBLIC_KEY"), priv = Deno.env.get("VAPID_PRIVATE_KEY");
-  if (!pub || !priv) return;
-  try {
-    webpush.setVapidDetails("mailto:noreply@trojanwalk.app", pub, priv);
-    const { data: me } = await admin.from("profiles").select("first_name").eq("id", requesterId).single();
-    const mins = Math.max(0, Math.round((new Date(r.leave_at).getTime() - Date.now()) / 60000));
-    const payload = JSON.stringify({
-      type: "walk_request",
-      request_id: r.id,
-      title: "Walk together?",
-      body: `${me?.first_name ?? "Someone"} wants company, ${r.origin_label} to ${r.dest_label}, leaving in ${mins} min.`,
-      actions: [{ action: "accept", title: "Yes" }, { action: "decline", title: "No" }],
-    });
-    const { data: subs } = await admin.from("push_subscriptions").select("*").in("user_id", userIds);
-    await Promise.allSettled((subs ?? []).map(async (s: Record<string, string>) => {
-      try {
-        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload);
-      } catch (e) {
-        const code = (e as { statusCode?: number }).statusCode;
-        if (code === 404 || code === 410) await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
-      }
-    }));
-  } catch (e) {
-    console.error("push failed:", (e as Error).message);
-  }
-}

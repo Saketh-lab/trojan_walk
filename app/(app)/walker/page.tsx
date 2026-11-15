@@ -1,3 +1,5 @@
-export default function Page() {
-  return <p className="text-dim">Coming next.</p>;
+import { WalkerScreen } from "@/components/app/walker-screen";
+
+export default function WalkerPage() {
+  return <WalkerScreen />;
 }

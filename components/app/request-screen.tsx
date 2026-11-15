@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useLocation } from "@/lib/use-location";
 import { haversine } from "@/lib/geo";
 import { Button } from "@/components/ui/button";
+import { ExpiredOptions, type Trip } from "@/components/app/expired-options";
+import { useRef } from "react";
 
 type Parsed = {
   origin_slug: string | null;
@@ -24,7 +26,7 @@ type Phase =
   | { name: "compose" }
   | { name: "form"; note: string }
   | { name: "searching"; requestId: string; notified: number; startedAt: number }
-  | { name: "expired" };
+  | { name: "expired"; requestId: string };
 
 const CONFIDENT = 0.7;
 const SEARCH_S = 180;
@@ -48,6 +50,7 @@ export function RequestScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [left, setLeft] = useState(SEARCH_S);
+  const trip = useRef<Trip | null>(null);
 
   const landmarks = places.filter((p) => p.kind !== "safe_spot");
   const here = position
@@ -93,6 +96,7 @@ export function RequestScreen() {
       });
       setBusy(false);
       if (fanErr) return setError(`Request saved but fan-out failed: ${fanErr.message}`);
+      trip.current = { pickup: position, dest: { lat: dest.lat, lng: dest.lng, label: dest.label } };
       setLeft(SEARCH_S);
       setPhase({ name: "searching", requestId: row.id, notified: fan?.rung2 ?? 0, startedAt: Date.now() });
     },
@@ -146,7 +150,7 @@ export function RequestScreen() {
         }
       } else if (r && r.status !== "open") {
         done = true;
-        setPhase({ name: "expired" });
+        setPhase({ name: "expired", requestId: reqId });
       }
     };
     const channel = supabase
@@ -201,13 +205,12 @@ export function RequestScreen() {
           </Button>
         </section>
       ) : phase.name === "expired" ? (
-        <section className="flex flex-col gap-4 rounded-[12px] bg-surface p-5">
-          <h2 className="font-display text-2xl font-semibold">No one yet</h2>
-          <p className="text-dim">Nobody joined in time. Try again, or take a Lyft.</p>
-          <Button onClick={() => setPhase({ name: "compose" })} className="h-12 rounded-[12px] bg-cardinal font-display text-base font-semibold text-ink hover:bg-cardinal/90">
-            Try again
-          </Button>
-        </section>
+        <ExpiredOptions
+          supabase={supabase}
+          requestId={phase.requestId}
+          trip={trip.current}
+          onRetry={() => setPhase({ name: "compose" })}
+        />
       ) : (
         <form onSubmit={submitText} className="flex flex-col gap-4">
           {phase.name === "form" && (
