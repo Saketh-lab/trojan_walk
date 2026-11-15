@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { MapPin, Phone, ShieldCheck, Star } from "lucide-react";
 import { useLocation } from "@/lib/use-location";
-import { HeadingTracker } from "@/lib/geo";
+import { HeadingTracker, haversine } from "@/lib/geo";
 import { AppHeader } from "@/components/app/app-header";
 import { LyftButton } from "@/components/app/lyft-button";
 import { DemoPanel } from "@/components/app/demo-panel";
@@ -30,6 +29,7 @@ type Status = {
   i_missed: boolean;
   peer_missed: boolean;
   i_am_requester: boolean;
+  is_broadcast: boolean;
   peer_first_name: string | null;
   watcher_mode: boolean;
   watcher_last4: string | null;
@@ -51,7 +51,6 @@ const STATE_LABEL: Record<Status["state"], string> = {
 };
 
 export function SessionScreen({ sessionId, userId, demoMode }: { sessionId: string; userId: string; demoMode: boolean }) {
-  const router = useRouter();
   const { supabase, places, position, demo } = useLocation();
   const [status, setStatus] = useState<Status | null>(null);
   const [skew, setSkew] = useState(0);
@@ -174,6 +173,13 @@ export function SessionScreen({ sessionId, userId, demoMode }: { sessionId: stri
   const escalatedForMe = status.state === "escalated" && status.i_missed;
   const checkOnThem = (status.state === "checkin_missed" || status.state === "escalated") && status.peer_missed && !status.i_missed;
   const notice = status.notices.at(-1);
+  const atSafeSpot =
+    status.is_broadcast &&
+    status.i_am_requester &&
+    live &&
+    !!position &&
+    lyftDest !== null &&
+    haversine(position, lyftDest) < 40;
 
   return (
     <div className="flex flex-col gap-5">
@@ -196,6 +202,16 @@ export function SessionScreen({ sessionId, userId, demoMode }: { sessionId: stri
           </p>
         )}
       </section>
+
+      {atSafeSpot && (
+        <section role="status" data-testid="safe-spot-prompt" className="flex flex-col gap-3 rounded-[12px] border border-cardinal bg-surface p-4">
+          <h2 className="font-display text-xl font-semibold">You&apos;re at {status.dest_label ?? "a safe spot"}</h2>
+          <p className="text-dim">This spot is staffed. If you feel safe now, you can end the walk. {peerName} will be told you&apos;re okay.</p>
+          <button onClick={endWalk} disabled={busy} className="h-12 rounded-[12px] bg-cardinal font-display text-lg font-semibold disabled:opacity-50">
+            I&apos;m safe, end the walk
+          </button>
+        </section>
+      )}
 
       {checkOnThem && (
         <section role="status" className="rounded-[12px] border border-cardinal bg-surface p-4">
@@ -264,8 +280,14 @@ export function SessionScreen({ sessionId, userId, demoMode }: { sessionId: stri
 
       {status.state === "ended" && (
         <section className="flex flex-col gap-3 rounded-[12px] bg-surface p-5">
-          <h2 className="font-display text-2xl font-semibold">Walk ended</h2>
-          <p className="text-dim">Location sharing has stopped.</p>
+          <h2 className="font-display text-2xl font-semibold">
+            {status.is_broadcast && !status.i_am_requester ? "They're safe" : "Walk ended"}
+          </h2>
+          <p className="text-dim">
+            {status.is_broadcast && !status.i_am_requester
+              ? "Thanks for coming. Location sharing has stopped."
+              : "Location sharing has stopped."}
+          </p>
           <Link href="/map" className="flex h-12 items-center justify-center rounded-[12px] bg-cardinal font-display text-lg font-semibold">
             Back home
           </Link>

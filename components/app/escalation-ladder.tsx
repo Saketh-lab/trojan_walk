@@ -7,7 +7,7 @@ type Step = { n: string; label: string; icon: LucideIcon; escalation?: boolean; 
 const steps: Step[] = [
   { n: "01", label: "Walk with me", icon: Users, href: "/request" },
   { n: "02", label: "Share my walk", icon: Navigation },
-  { n: "03", label: "Broadcast", icon: Radio, escalation: true },
+  { n: "03", label: "Broadcast", icon: Radio, escalation: true, href: "/request/broadcast" },
   { n: "04", label: "Emergency", icon: Phone, escalation: true },
 ];
 

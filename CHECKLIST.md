@@ -1,6 +1,6 @@
 # TrojanWalk checklist
 
-Last updated: 2026-11-15 (after SPEC Prompt 6)
+Last updated: 2026-11-15 (after SPEC Prompt 8)
 
 ## How to run
 
@@ -62,6 +62,24 @@ wrong gender. Walkers stay on `/map` with Walking alone ON, pinned within 100 m 
 about 2 min after the request (the 30 s cron adds up to 30 s). After the test set `opted_in = false` /
 `pings_tonight = 0` on the extra Walkers.
 
+## Broadcast test (Prompt 7)
+
+Three windows: Ana (requester, pinned at Leavey), Ben (~95 m, Walker) and Cam (~180 m) pinned and Walking alone ON on
+`/map`. Ana: ladder row 03 or `/request/broadcast` > Broadcast > Send broadcast. Ben and Cam get "Someone needs a
+person" > Can come. Ana sees two anonymous cards (year, Walker badge, distance rounded to 50 m) > Approve one. The
+approved responder and Ana land on the same `/session/<id>`; the other sees "Someone else is on the way, thank you."
+At the safe spot Ana gets "I'm safe, end the walk"; the responder then sees "They're safe". A third broadcast in
+12 h is refused (429, Emergency screen). Reset: `update requests set status='cancelled' where status='open'`.
+
+## Friends test (Prompt 8)
+
+Friends section lives on `/profile`. Needs `NEXT_PUBLIC_PHONE_SALT` in `.env.local` (restart `npm run dev` after adding).
+Dee: `/profile` > "Your number" > Save (stored as a hash only). Ana: add `demo3@usc.edu` by email; Sync contacts >
+paste `(213) 555-0142` (Dee's number) > Dee appears under "From your contacts". For the match-card chips, give Ana
+and Dee a shared class/hall (no UI yet): `insert into shared_context (user_id, kind, value) ...` (demo rows
+`CSCI-201-DEMO` / `Village` are already in place), put Dee on `/map` with Walking alone ON, and have Ana ask for a walk.
+Dee's banner shows "Why you: Friend, Same class, Same hall".
+
 ## Works end to end (verified)
 
 - [x] Schema, RLS on all tables, cron jobs, realtime publication (Prompt 1).
@@ -113,7 +131,38 @@ about 2 min after the request (the 30 s cron adds up to 30 s). After the test se
       `pings_tonight` went 0 > 1 (cap counter works); `push-pending` was poked by cron and returned
       `claimed 1, sent 0, skipped "no VAPID keys"`.
 
+- [x] Prompt 7 (Playwright, 3 windows + curl): broadcast row = area label + nearest staffed safe spot as hidden
+      destination, 10 min window; targets rung 4 (Ben, Cam); `dps_log` row = area only; Ana saw the 3 nearest staffed
+      safe spots with walk minutes (Leavey desk 1 min, blue-light phones 2 min); both responders got an area-only
+      banner (no name, no digits/coordinates); Ana's cards showed year / Walker badge / distance (100 m, 200 m) and no
+      names; approving created one session and marked the other target `declined`; the other responder saw
+      "Someone else is on the way, thank you"; Ben saw Ana's dot only after approval. A third broadcast in 12 h
+      returned 429 `limit`; signed-out call 401.
+- [x] Access control: a responder who was not approved reads nothing about the broadcast (requests, responder
+      cards, session, session_fixes all `[]`; session_status and record_fix 42501); even the approved responder
+      cannot read the request row (coordinates), only the session; `target_requests` for broadcasts has no
+      destination and no requester name.
+
+- [x] Prompt 8 (Playwright + curl): add by email: added / already friends (case-insensitive) / not found / non-usc /
+      own email all gave the right message; Sync contacts (paste fallback) posted only sha256 hashes (junk line dropped
+      client-side), matched Dee, and inserted friendships both ways with source `contacts`; Remove deletes both
+      directions; Dee's stored `phone_hash` is 64-hex and does not contain the number. Match card: Dee's banner showed
+      "Why you: Friend, Same class, Same hall"; the view returns `walker` for rung-3 targets and an empty list for
+      broadcasts. Server checks: plain numbers or empty list 400, 1001 hashes 413, signed out 401, direct friendship
+      insert denied by RLS, a user can read only their own profile row, `my_friends` exposes only first name/source.
+
 ## Written but NOT yet exercised
+
+- [ ] The Contact Picker path (`navigator.contacts.select`): Android Chrome only; headless used the paste fallback.
+      iPhone Safari has no contact picker at all, so iOS users paste numbers.
+- [ ] Block interaction (a blocked pair is skipped by email add and contacts sync): coded, not exercised.
+- [ ] Hash/salt rotation: changing `NEXT_PUBLIC_PHONE_SALT` orphans every saved `phone_hash`.
+
+- [ ] 40-recipient cap and the 600 m Walker radius (only 2 users were in range; Ben was a Walker but inside 400 m).
+- [ ] Web Push for broadcasts (needs VAPID edge secrets; same path as walk requests).
+- [ ] "Anyone who applies and is later reported is suspended": not built (no report UI yet).
+- [ ] Responder gets a route to the requester: not built; they see the requester's live dot only.
+- [ ] Requester choosing a safe spot other than the nearest: the nearest staffed one is used as the walk destination.
 
 - [ ] Web Push end to end (subscribe, VAPID secrets as edge secrets, send, receive). The prompt on `/walker`
       only reaches the permission step; nothing was subscribed in headless Chrome.
@@ -155,6 +204,21 @@ about 2 min after the request (the 30 s cron adds up to 30 s). After the test se
 
 ## Decisions / gotchas
 
+- Friends are added without the other person's consent (spec: "insert both directions"). Anyone can add any
+  `@usc.edu` account by email, after which that person gets their walk requests first. Blocking is the only remedy
+  today. Recommended before a real pilot: make email adds a request the other person accepts.
+- Add-by-email reveals whether an address has an account ("No Trojan found"). Contact sync can likewise be used to
+  test whether phone numbers are on the app (capped at 1000 hashes per call). The app salt is public by design
+  (`NEXT_PUBLIC_`), so a leaked `phone_hash` column could be reversed by brute force; it is a convenience, not secrecy.
+- "Same class" / "same hall" come from `shared_context`, which has no UI yet (rows are demo data).
+
+- Broadcast responder cards have no names (your call; the spec shows a first name). `request_responders.first_name`
+  is kept as a column that is always null because a migration that dropped the view was declined. The approved
+  responder's first name appears on the session screen only.
+- The broadcast "short label" is stored in `requests.raw_text`; only the requester and DPS ever see it.
+- Broadcast sessions do not auto-end at the 40 m safe-spot geofence (that ended the walk instantly when the
+  requester started near the spot). The requester gets a prompt; ending it tells the responder they are safe.
+
 - Being matched as a Walker needs the app open with Walking alone ON: matching uses live presence (spec query),
   so a closed app cannot be found. Push only helps once they are in range. `/walker` says so.
 - Opting out is a flag (`walkers.opted_in`), not a delete, so a strike record cannot be reset by re-opting in.
@@ -183,5 +247,7 @@ about 2 min after the request (the 30 s cron adds up to 30 s). After the test se
 - [x] Prompt 4: live session, check-in, sweep, SMS stub, arrival + rating
 - [x] Prompt 5: Lyft handoff + watcher walk on request expiry
 - [x] Prompt 6: /walker + rung 3 (Walker ping at +120 s)
-- [ ] Prompts 7 to 10
+- [x] Prompt 7: broadcast with approval gate
+- [x] Prompt 8: friends (email add, contacts sync, match-card reasons)
+- [ ] Prompts 9 to 10
 - [ ] History screen (deferred to the end by request)

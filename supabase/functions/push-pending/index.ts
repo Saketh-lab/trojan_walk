@@ -30,16 +30,28 @@ Deno.serve(async () => {
   for (const t of claimed) {
     const { data: r } = await admin.from("requests")
       .select("id,status,kind,leave_at,origin_label,dest_label,requester").eq("id", t.request_id).single();
-    if (!r || r.status !== "open" || r.kind !== "walk") continue;
-    const { data: who } = await admin.from("profiles").select("first_name").eq("id", r.requester).single();
-    const mins = Math.max(0, Math.round((new Date(r.leave_at).getTime() - Date.now()) / 60000));
-    const payload = JSON.stringify({
-      type: "walk_request",
-      request_id: r.id,
-      title: "Walk together?",
-      body: `${who?.first_name ?? "Someone"} wants company, ${r.origin_label} to ${r.dest_label}, leaving in ${mins} min.`,
-      actions: [{ action: "accept", title: "Yes" }, { action: "decline", title: "No" }],
-    });
+    if (!r || r.status !== "open") continue;
+    let payload: string;
+    if (r.kind === "broadcast") {
+      // Area only: no name, no coordinates, no destination.
+      payload = JSON.stringify({
+        type: "broadcast",
+        request_id: r.id,
+        title: "Someone needs a person",
+        body: `Someone near ${r.origin_label} needs a person right now. Can you come?`,
+        actions: [{ action: "apply", title: "Can come" }, { action: "decline", title: "Can't" }],
+      });
+    } else {
+      const { data: who } = await admin.from("profiles").select("first_name").eq("id", r.requester).single();
+      const mins = Math.max(0, Math.round((new Date(r.leave_at).getTime() - Date.now()) / 60000));
+      payload = JSON.stringify({
+        type: "walk_request",
+        request_id: r.id,
+        title: "Walk together?",
+        body: `${who?.first_name ?? "Someone"} wants company, ${r.origin_label} to ${r.dest_label}, leaving in ${mins} min.`,
+        actions: [{ action: "accept", title: "Yes" }, { action: "decline", title: "No" }],
+      });
+    }
     const { data: subs } = await admin.from("push_subscriptions").select("endpoint,p256dh,auth").eq("user_id", t.user_id);
     for (const s of subs ?? []) {
       try {
