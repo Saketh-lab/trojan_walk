@@ -1,11 +1,7 @@
 import { DEMO_USERS } from "@/lib/demo-users";
 
-// No email, no magic link: signing in is picking a demo user. Read per request so env changes apply on redeploy.
-export const dynamic = "force-dynamic";
-
+// No email, no magic link: signing in is picking a demo user.
 export default function LoginPage() {
-  const ready = !!process.env.DEMO_PASSWORD;
-
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col justify-center gap-8 px-5 py-8">
       <div>
@@ -15,32 +11,23 @@ export default function LoginPage() {
       </div>
 
       <section className="flex flex-col gap-4" aria-label="Demo users">
-        {ready ? (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              {DEMO_USERS.map((u) => (
-                <form key={u.email} action="/api/dev-login" method="post">
-                  <input type="hidden" name="email" value={u.email} />
-                  <button
-                    type="submit"
-                    className="h-16 w-full rounded-[12px] bg-cardinal font-display text-xl font-semibold text-ink"
-                  >
-                    {u.name}
-                  </button>
-                </form>
-              ))}
-            </div>
-            <p className="text-sm text-dim">
-              Use a normal window for one user and a private window for another; tabs in the same
-              window share one session.
-            </p>
-          </>
-        ) : (
-          <p className="rounded-[12px] border border-cardinal bg-surface px-4 py-3 text-sm">
-            Demo sign-in isn&apos;t configured: <code>DEMO_PASSWORD</code> is not set in this environment. Add it
-            and redeploy.
-          </p>
-        )}
+        <div className="grid grid-cols-2 gap-3">
+          {DEMO_USERS.map((u) => (
+            <form key={u.email} action="/api/dev-login" method="post">
+              <input type="hidden" name="email" value={u.email} />
+              <button
+                type="submit"
+                className="h-16 w-full rounded-[12px] bg-cardinal font-display text-xl font-semibold text-ink"
+              >
+                {u.name}
+              </button>
+            </form>
+          ))}
+        </div>
+        <p className="text-sm text-dim">
+          Use a normal window for one user and a private window for another; tabs in the same
+          window share one session.
+        </p>
       </section>
     </div>
   );
